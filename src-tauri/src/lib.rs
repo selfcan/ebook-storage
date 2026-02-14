@@ -6,8 +6,6 @@ use tauri::State;
 use tauri_plugin_store::StoreExt;
 use walkdir::WalkDir;
 
-const SUPPORTED_EXTENSIONS: &[&str] = &["pdf", "epub", "mobi", "azw3", "txt"];
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookInfo {
     pub name: String,
@@ -18,6 +16,29 @@ pub struct BookInfo {
 
 pub struct AppState {
     books: Mutex<Vec<BookInfo>>,
+}
+
+// ========== 文件扩展名配置 ==========
+
+fn get_default_extensions() -> Vec<String> {
+    vec!["pdf".to_string(), "epub".to_string(), "mobi".to_string(), "azw3".to_string(), "txt".to_string()]
+}
+
+#[tauri::command]
+async fn get_extensions(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let store = app.store("config.json").map_err(|e| e.to_string())?;
+    let exts: Vec<String> = store
+        .get("extensions")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_else(get_default_extensions);
+    Ok(exts)
+}
+
+#[tauri::command]
+async fn set_extensions(app: tauri::AppHandle, extensions: Vec<String>) -> Result<Vec<String>, String> {
+    let store = app.store("config.json").map_err(|e| e.to_string())?;
+    store.set("extensions", serde_json::json!(extensions));
+    Ok(extensions)
 }
 
 // ========== 目录配置 ==========
@@ -94,7 +115,7 @@ async fn load_cached_books(app: tauri::AppHandle, state: State<'_, AppState>) ->
 
 // ========== 书籍扫描 ==========
 
-fn scan_directory(dir: &str) -> Vec<BookInfo> {
+fn scan_directory(dir: &str, extensions: &[String]) -> Vec<BookInfo> {
     let mut books = Vec::new();
     for entry in WalkDir::new(dir).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
@@ -109,7 +130,7 @@ fn scan_directory(dir: &str) -> Vec<BookInfo> {
             Some(e) => e,
             None => continue,
         };
-        if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
+        if !extensions.iter().any(|e| e == &ext) {
             continue;
         }
 
@@ -149,9 +170,14 @@ async fn scan_books(app: tauri::AppHandle, state: State<'_, AppState>) -> Result
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
 
+    let extensions: Vec<String> = store
+        .get("extensions")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_else(get_default_extensions);
+
     let mut all_books = Vec::new();
     for dir in &dirs {
-        all_books.extend(scan_directory(dir));
+        all_books.extend(scan_directory(dir, &extensions));
     }
 
     let mut books = state.books.lock().map_err(|e| e.to_string())?;
@@ -260,6 +286,8 @@ pub fn run() {
             get_directories,
             add_directory,
             remove_directory,
+            get_extensions,
+            set_extensions,
             load_cached_books,
             scan_books,
             search_books,

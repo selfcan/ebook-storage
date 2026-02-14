@@ -6,10 +6,16 @@ import { open } from "@tauri-apps/plugin-dialog";
 const emit = defineEmits<{ (e: "back"): void }>();
 
 const directories = ref<string[]>([]);
+const extensions = ref<string[]>([]);
+const newExtension = ref("");
 const scanning = ref(false);
 
 async function loadDirectories() {
   directories.value = await invoke<string[]>("get_directories");
+}
+
+async function loadExtensions() {
+  extensions.value = await invoke<string[]>("get_extensions");
 }
 
 async function addDirectory() {
@@ -25,6 +31,20 @@ async function removeDirectory(path: string) {
   directories.value = await invoke<string[]>("remove_directory", { path });
 }
 
+async function addExtension() {
+  const ext = newExtension.value.trim().toLowerCase().replace(/^\./, "");
+  if (ext && !extensions.value.includes(ext)) {
+    extensions.value.push(ext);
+    await invoke("set_extensions", { extensions: extensions.value });
+    newExtension.value = "";
+  }
+}
+
+async function removeExtension(ext: string) {
+  extensions.value = extensions.value.filter(e => e !== ext);
+  await invoke("set_extensions", { extensions: extensions.value });
+}
+
 async function rescan() {
   scanning.value = true;
   try {
@@ -34,7 +54,10 @@ async function rescan() {
   }
 }
 
-onMounted(loadDirectories);
+onMounted(() => {
+  loadDirectories();
+  loadExtensions();
+});
 </script>
 
 <template>
@@ -62,6 +85,29 @@ onMounted(loadDirectories);
           </div>
         </div>
         <button class="btn-primary" @click="addDirectory">+ 添加目录</button>
+      </section>
+
+      <section class="section">
+        <h3 class="section-title">支持的文件格式(修改后请重新扫描)</h3>
+        <div v-if="extensions.length === 0" class="empty-hint">
+          尚未配置任何文件格式
+        </div>
+        <div v-else class="ext-list">
+          <div v-for="ext in extensions" :key="ext" class="ext-item">
+            <span class="ext-name">.{{ ext }}</span>
+            <button class="btn-delete" @click="removeExtension(ext)">删除</button>
+          </div>
+        </div>
+        <div class="add-ext-form">
+          <input
+            v-model="newExtension"
+            type="text"
+            placeholder="输入扩展名，如 pdf"
+            class="ext-input"
+            @keyup.enter="addExtension"
+          />
+          <button class="btn-add" @click="addExtension">添加</button>
+        </div>
       </section>
 
       <section class="section">
@@ -192,5 +238,56 @@ onMounted(loadDirectories);
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.ext-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ext-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--input-bg);
+}
+.ext-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+.add-ext-form {
+  display: flex;
+  gap: 8px;
+}
+.ext-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.ext-input:focus {
+  border-color: var(--accent-color);
+}
+.btn-add {
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--accent-color);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: opacity 0.15s;
+}
+.btn-add:hover {
+  opacity: 0.9;
 }
 </style>
